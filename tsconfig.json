@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "lib": ["esnext"],
+    "resolveJsonModule": true,
+    "moduleResolution": "node"
+  },
+  "exclude": ["node_modules"],
+}
