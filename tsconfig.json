@@ -1,9 +1,12 @@
 {
   "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
     "target": "es6",
     "lib": ["esnext"],
     "resolveJsonModule": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "outDir": "dist"
   },
+  "include": ["src"],
   "exclude": ["node_modules"],
 }
