@@ -7,7 +7,7 @@ Add the following config variables to a `.env` file you create:
 destination_pk - the private key of the destination address.
 sweep_mnemonic - the mnemonic you'd like swept
 sweep_depth - how deep you'd like to go down the mnemonic derivation path
-sweep_frequency - interval between sweeps in seconds
+sweep_frequency - interval between sweeps in ms
 
 # json rpc urls - currently all required
 mainnet_rpc
