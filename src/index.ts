@@ -14,7 +14,8 @@ enum Networks {
   goerli = 'goerli',
 }
 
-const WALLET_DEPTH = process.env.sweep_depth || 3
+const SWEEP_FREQ = !!process.env.sweep_frequency ? parseInt(process.env.sweep_frequency) : 30 * 1000
+const WALLET_DEPTH = parseInt(process.env.sweep_depth) || 3
 
 function getWallets(providers: Record<Networks, JsonRpcProvider>): Record<Networks, Wallet[]> {
   const wallets = {}
@@ -33,25 +34,35 @@ function getWallets(providers: Record<Networks, JsonRpcProvider>): Record<Networ
   return wallets as Record<Networks, Wallet[]>
 }
 
-async function estimateGasPrice(provider: JsonRpcProvider): Promise<BigNumber> {
-  const network = await provider.getNetwork()
-  // if (network.name === 'homestead') {
-  //   const response = await fetch('https://www.gasnow.org/api/v3/gas/price')
-  //   const { data } = await response.json()
-  //   console.log(`gas price estimate for ${network.name}: ${utils.formatUnits(data.fast, 'gwei')}`)
-  //   return data.fast
-  // }
-  const block = await provider.getBlockWithTransactions('latest')
-  const block1 = await provider.getBlockWithTransactions(-1)
-  const block2 = await provider.getBlockWithTransactions(-2)
-  const transactions = [...block.transactions, ...block1.transactions, ...block2.transactions]
-  const filteredTxList = transactions.filter((tx) => tx.gasPrice.gt(0))
-  const gasPrices = filteredTxList.map((tx) => tx.gasPrice)
-  const gasSum = gasPrices.reduce((acc, cur) => acc.add(cur), BigNumber.from(0))
-  const divisor = Math.floor(gasPrices.length * 0.99) || gasPrices.length || 1
-  const average = gasSum.div(divisor)
-  console.log(`gas price estimate for ${network.name}: ${utils.formatUnits(average, 'gwei')}`)
-  return average
+async function estimateGasPrice(provider: JsonRpcProvider): Promise<BigNumber | void> {
+  try {
+    const network = await provider.getNetwork()
+    if (network.name === 'homestead') {
+      try {
+        const response = await fetch('https://www.gasnow.org/api/v3/gas/price')
+        if (response.ok) {
+          const { data } = await response.json()
+          console.log(`gas price estimate for ${network.name}: ${utils.formatUnits(data.fast, 'gwei')}`)
+          return data.fast
+        }
+      } catch (error) {
+        console.error(`gasnow api call failed`, error)
+      }
+    }
+    const block = await provider.getBlockWithTransactions('latest')
+    const block1 = await provider.getBlockWithTransactions(-1)
+    const block2 = await provider.getBlockWithTransactions(-2)
+    const transactions = [...block.transactions, ...block1.transactions, ...block2.transactions]
+    const filteredTxList = transactions.filter((tx) => tx.gasPrice.gt(0))
+    const gasPrices = filteredTxList.map((tx) => tx.gasPrice)
+    const gasSum = gasPrices.reduce((acc, cur) => acc.add(cur), BigNumber.from(0))
+    const divisor = gasPrices.length || 1
+    const average = gasSum.div(divisor).mul(102).div(100) // 2% gas price buffer over average rate
+    console.log(`gas price estimate for ${network.name}: ${utils.formatUnits(average, 'gwei')}`)
+    return average
+  } catch (error) {
+    console.error(`failed gas estimation: ${error}`)
+  }
 }
 
 async function main() {
@@ -65,58 +76,67 @@ async function main() {
 
   const networkValues = Object.values(Networks)
   const gasPriceEstimates = {}
-  
+
   networkValues.forEach(async (network) => {
     gasPriceEstimates[network] = await estimateGasPrice(providers[network])
   })
 
-
-  return new Promise<void>(() => {
-    let wallets = getWallets(providers)
-    const transferGasCost = BigNumber.from('21000')
-    const destination = new Wallet(process.env.destination_pk).connect(providers.mainnet)
-    const SWEEP_FREQ = !!process.env.sweep_frequency ? parseInt(process.env.sweep_frequency) : 30 * 1000
-    setInterval(async () => {
+  let wallets = getWallets(providers)
+  const transferGasCost = BigNumber.from('21000')
+  const destination = new Wallet(process.env.destination_pk).connect(providers.mainnet)
+  async function sweep(network: Networks) {
+    try {
+      const promises = [...Array(WALLET_DEPTH).keys()].map(async (i) => {
+        console.log(`scanning ${network}-${i}`)
+        const balance = await wallets[network][i].getBalance()
+        const transferCost = transferGasCost.mul(gasPriceEstimates[network])
+        if (balance.gt(transferCost)) {
+          const address = await wallets[network][i].getAddress()
+          console.log(`worth transacting on ${network}${i} as ${address}`)
+          console.log(`balance: ${balance.toString()}`)
+          console.log(`transferCost: ${transferCost.toString()}`)
+          const transaction = {
+            to: destination.address,
+            from: wallets[network][i].address,
+            gasPrice: gasPriceEstimates[network],
+            value: balance.sub(transferCost),
+            gasLimit: transferGasCost,
+          }
+          console.log(`transaction prepared for ${network}`, transaction)
+          const txResponse = await wallets[network][i].sendTransaction(transaction)
+          return txResponse.wait()
+        }
+      })
+      await Promise.all(promises)
+    } catch (error) {
+      console.error('error sweeping', error)
+    }
+  }
+  async function handleBlock(network: Networks, blocknumber: number) {
+    if (!gasPriceEstimates[network]) {
+      return
+    }
+    if (blocknumber % 3 !== 0) {
       try {
-        const networkValues = Object.values(Networks)
-        networkValues.forEach(async (network) => {
-          gasPriceEstimates[network] = await estimateGasPrice(providers[network])
-        })
+        estimateGasPrice(providers[network]).then((price) => (gasPriceEstimates[network] = price))
       } catch (error) {
         console.error('error setting gas estimate', error)
       }
-      try {
-        const networkValues = Object.values(Networks)
-        for (let h = 0; h < networkValues.length; h++) {
-          const network = networkValues[h]
-          for (let i = 0; i < WALLET_DEPTH; i++) {
-            console.log(`scanning ${network}-${i}`)
-            const balance = await wallets[network][i].getBalance()
-            const transferCost = transferGasCost.mul(gasPriceEstimates[network])
-            if (balance.gt(transferCost)) {
-              const address = await wallets[network][i].getAddress()
-              console.log(`worth transacting on ${network}${i} as ${address}`)
-              console.log(`balance: ${balance.toString()}`)
-              console.log(`transferCost: ${transferCost.toString()}`)
+    }
+    sweep(network)
+  }
 
-              const transaction = {
-                to: destination.address,
-                from: wallets[network][i].address,
-                gasPrice: gasPriceEstimates[network],
-                value: balance.sub(transferCost),
-                gasLimit: transferGasCost,
-              }
-              console.log(`transaction prepared for ${network}`, transaction)
-              const txResponse = await wallets[network][i].sendTransaction(transaction)
-              const txReceipt = await txResponse.wait()
-              console.log(`txReceipt on ${network} for ${address}`, txReceipt)
-            }
-          }
-        }
-      } catch (error) {
-        console.error('error sweeping', error)
-      }
+  return new Promise<void>(() => {
+    providers[Networks.mainnet].on('block', (blockNumber) => handleBlock(Networks.mainnet, blockNumber))
+    const testnets = networkValues.filter((network) => network !== Networks.mainnet)
+    setInterval(() => {
+      testnets.forEach(sweep)
     }, SWEEP_FREQ)
+    setInterval(() => {
+      testnets.forEach((network) => {
+        estimateGasPrice(providers[network]).then((price) => (gasPriceEstimates[network] = price))
+      })
+    }, SWEEP_FREQ ^ 1.05)
   })
 }
 
