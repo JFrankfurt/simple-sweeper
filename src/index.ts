@@ -17,6 +17,21 @@ enum Networks {
 const SWEEP_FREQ = !!process.env.sweep_frequency ? parseInt(process.env.sweep_frequency) : 30 * 1000
 const WALLET_DEPTH = parseInt(process.env.sweep_depth) || 3
 
+function checkEnvironment(): void {
+  const hasRequiredEnvVars =
+    !process.env.destination_pk ||
+    !process.env.sweep_mnemonic ||
+    !process.env.sweep_depth ||
+    !process.env.sweep_frequency ||
+    !process.env.mainnet_rpc ||
+    !process.env.rinkeby_rpc ||
+    !process.env.kovan_rpc ||
+    !process.env.ropsten_rpc ||
+    !process.env.goerli_rpc
+  if (!hasRequiredEnvVars) {
+    throw new Error('Missing required environment variables. Check .env.example and make your own .env file.')
+  }
+}
 function getWallets(providers: Record<Networks, JsonRpcProvider>): Record<Networks, Wallet[]> {
   const wallets = {}
   Object.values(Networks).forEach((network) => {
@@ -66,6 +81,7 @@ async function estimateGasPrice(provider: JsonRpcProvider): Promise<BigNumber | 
 }
 
 async function main() {
+  checkEnvironment()
   const providers: Record<Networks, JsonRpcProvider> = {
     [Networks.mainnet]: new JsonRpcProvider(process.env.mainnet_rpc),
     [Networks.rinkeby]: new JsonRpcProvider(process.env.rinkeby_rpc),
