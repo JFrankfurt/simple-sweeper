@@ -18,18 +18,22 @@ const SWEEP_FREQ = !!process.env.sweep_frequency ? parseInt(process.env.sweep_fr
 const WALLET_DEPTH = parseInt(process.env.sweep_depth) || 3
 
 function checkEnvironment(): void {
-  const hasRequiredEnvVars =
-    !process.env.destination_pk ||
-    !process.env.sweep_mnemonic ||
-    !process.env.sweep_depth ||
-    !process.env.sweep_frequency ||
-    !process.env.mainnet_rpc ||
-    !process.env.rinkeby_rpc ||
-    !process.env.kovan_rpc ||
-    !process.env.ropsten_rpc ||
-    !process.env.goerli_rpc
+  const requiredVars = [
+    'destination_pk',
+    'sweep_mnemonic',
+    'sweep_depth',
+    'sweep_frequency',
+    'mainnet_rpc',
+    'rinkeby_rpc',
+    'kovan_rpc',
+    'ropsten_rpc',
+    'goerli_rpc',
+  ]
+  const hasRequiredEnvVars = requiredVars.reduce((acc, cur) => (Boolean(process.env[cur]) ? acc : false), true)
+
   if (!hasRequiredEnvVars) {
-    throw new Error('Missing required environment variables. Check .env.example and make your own .env file.')
+    const missing = requiredVars.reduce((acc, cur) => (process.env[cur] === undefined ? [...acc, cur] : acc), [])
+    throw new Error(`Missing required environment variables. Make your own .env file and include: ${missing}.`)
   }
 }
 function getWallets(providers: Record<Networks, JsonRpcProvider>): Record<Networks, Wallet[]> {
@@ -145,10 +149,8 @@ async function main() {
     providers[Networks.mainnet].on('block', async (blockNumber) => await handleBlock(Networks.mainnet, blockNumber))
     const testnets = networkValues.filter((network) => network !== Networks.mainnet)
     setInterval(async () => {
-      for (let index = 0; index < testnets.length; index++) {
-        const network = testnets[index]
-        await sweep(network)
-      }
+      const sweeps = testnets.map(sweep)
+      await Promise.all(sweeps)
     }, SWEEP_FREQ)
     setInterval(() => {
       testnets.forEach((network) => {
