@@ -86,7 +86,7 @@ async function main() {
   const destination = new Wallet(process.env.destination_pk).connect(providers.mainnet)
   async function sweep(network: Networks) {
     try {
-      const promises = [...Array(WALLET_DEPTH).keys()].map(async (i) => {
+      for (let i = 0; i <= WALLET_DEPTH; i++) {
         console.log(`scanning ${network}-${i}`)
         const balance = await wallets[network][i].getBalance()
         const transferCost = transferGasCost.mul(gasPriceEstimates[network])
@@ -106,8 +106,7 @@ async function main() {
           const txResponse = await wallets[network][i].sendTransaction(transaction)
           return txResponse.wait()
         }
-      })
-      await Promise.all(promises)
+      }
     } catch (error) {
       console.error('error sweeping', error)
     }
@@ -116,7 +115,7 @@ async function main() {
     if (!gasPriceEstimates[network]) {
       return
     }
-    if (blocknumber % 3 !== 0) {
+    if (blocknumber % 4 !== 0) {
       try {
         estimateGasPrice(providers[network]).then((price) => (gasPriceEstimates[network] = price))
       } catch (error) {
@@ -136,7 +135,7 @@ async function main() {
       testnets.forEach((network) => {
         estimateGasPrice(providers[network]).then((price) => (gasPriceEstimates[network] = price))
       })
-    }, SWEEP_FREQ ^ 1.05)
+    }, SWEEP_FREQ ^ 1.06)
   })
 }
 
