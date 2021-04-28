@@ -1,2 +1,6 @@
 node_modules
 npm-debug.log
+.env.example
+.hardhat.config.ts
+nodemon.json
+README.md
