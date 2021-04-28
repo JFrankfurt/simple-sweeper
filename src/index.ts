@@ -84,14 +84,14 @@ async function main() {
   let wallets = getWallets(providers)
   const transferGasCost = BigNumber.from('21000')
   const destination = new Wallet(process.env.destination_pk).connect(providers.mainnet)
-  async function sweep(network: Networks) {
+  async function sweep(network: Networks): Promise<any> {
     try {
-      for (let i = 0; i <= WALLET_DEPTH; i++) {
-        console.log(`scanning ${network}-${i}`)
+      for (let i = 0; i < WALLET_DEPTH; i++) {
+        const address = await wallets[network][i].getAddress()
+        console.log(`scanning ${network}-${i}: ${address}`)
         const balance = await wallets[network][i].getBalance()
         const transferCost = transferGasCost.mul(gasPriceEstimates[network])
         if (balance.gt(transferCost)) {
-          const address = await wallets[network][i].getAddress()
           console.log(`worth transacting on ${network}${i} as ${address}`)
           console.log(`balance: ${balance.toString()}`)
           console.log(`transferCost: ${transferCost.toString()}`)
@@ -104,14 +104,14 @@ async function main() {
           }
           console.log(`transaction prepared for ${network}`, transaction)
           const txResponse = await wallets[network][i].sendTransaction(transaction)
-          return txResponse.wait()
+          await txResponse.wait()
         }
       }
     } catch (error) {
       console.error('error sweeping', error)
     }
   }
-  async function handleBlock(network: Networks, blocknumber: number) {
+  async function handleBlock(network: Networks, blocknumber: number): Promise<any> {
     if (!gasPriceEstimates[network]) {
       return
     }
@@ -122,14 +122,17 @@ async function main() {
         console.error('error setting gas estimate', error)
       }
     }
-    sweep(network)
+    return sweep(network)
   }
 
   return new Promise<void>(() => {
-    providers[Networks.mainnet].on('block', (blockNumber) => handleBlock(Networks.mainnet, blockNumber))
+    providers[Networks.mainnet].on('block', async (blockNumber) => await handleBlock(Networks.mainnet, blockNumber))
     const testnets = networkValues.filter((network) => network !== Networks.mainnet)
-    setInterval(() => {
-      testnets.forEach(sweep)
+    setInterval(async () => {
+      for (let index = 0; index < testnets.length; index++) {
+        const network = testnets[index]
+        await sweep(network)
+      }
     }, SWEEP_FREQ)
     setInterval(() => {
       testnets.forEach((network) => {
