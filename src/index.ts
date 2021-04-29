@@ -123,8 +123,7 @@ async function main() {
             gasLimit: transferGasCost,
           }
           console.log(`transaction prepared for ${network}`, transaction)
-          const txResponse = await wallets[network][i].sendTransaction(transaction)
-          await txResponse.wait()
+          await wallets[network][i].sendTransaction(transaction)
         }
       }
     } catch (error) {
