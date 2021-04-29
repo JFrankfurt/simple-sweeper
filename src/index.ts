@@ -87,11 +87,11 @@ async function estimateGasPrice(provider: JsonRpcProvider): Promise<BigNumber | 
 async function main() {
   checkEnvironment()
   const providers: Record<Networks, JsonRpcProvider> = {
-    [Networks.mainnet]: new JsonRpcProvider(process.env.mainnet_rpc),
-    [Networks.rinkeby]: new JsonRpcProvider(process.env.rinkeby_rpc),
-    [Networks.kovan]: new JsonRpcProvider(process.env.kovan_rpc),
-    [Networks.ropsten]: new JsonRpcProvider(process.env.ropsten_rpc),
-    [Networks.goerli]: new JsonRpcProvider(process.env.goerli_rpc),
+    [Networks.mainnet]: new JsonRpcProvider(process.env.mainnet_rpc, 1),
+    [Networks.rinkeby]: new JsonRpcProvider(process.env.rinkeby_rpc, 4),
+    [Networks.kovan]: new JsonRpcProvider(process.env.kovan_rpc, 42),
+    [Networks.ropsten]: new JsonRpcProvider(process.env.ropsten_rpc, 3),
+    [Networks.goerli]: new JsonRpcProvider(process.env.goerli_rpc, 5),
   }
 
   const networkValues = Object.values(Networks)
