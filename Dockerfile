@@ -8,5 +8,4 @@ FROM bitnami/node:16-prod
 ENV NODE_ENV="production"
 COPY --from=builder /app /app
 WORKDIR /app
-EXPOSE 3000
 CMD ["npm", "start"]
