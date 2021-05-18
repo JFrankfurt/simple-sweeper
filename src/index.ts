@@ -1,5 +1,6 @@
 import { BigNumber } from '@ethersproject/bignumber'
-import { JsonRpcProvider } from '@ethersproject/providers'
+import { Deferrable } from '@ethersproject/properties'
+import { JsonRpcProvider, TransactionRequest } from '@ethersproject/providers'
 import { Wallet } from '@ethersproject/wallet'
 import { config } from 'dotenv'
 import { utils } from 'ethers'
@@ -12,6 +13,14 @@ enum Networks {
   kovan = 'kovan',
   ropsten = 'ropsten',
   goerli = 'goerli',
+}
+
+const ChainIds: Record<Networks, number> = {
+  mainnet: 1,
+  rinkeby: 4,
+  kovan: 42,
+  ropsten: 3,
+  goerli: 5,
 }
 
 const SWEEP_FREQ = !!process.env.sweep_frequency ? parseInt(process.env.sweep_frequency) : 30 * 1000
@@ -36,12 +45,15 @@ function checkEnvironment(): void {
     throw new Error(`Missing required environment variables. Make your own .env file and include: ${missing}.`)
   }
 }
-function getWallets(providers: Record<Networks, JsonRpcProvider>): Record<Networks, Wallet[]> {
+async function getWallets(providers: Record<Networks, JsonRpcProvider>): Promise<Record<Networks, Wallet[]>> {
   const wallets = {}
-  Object.values(Networks).forEach((network) => {
-    for (let i = 0; i < WALLET_DEPTH; i++) {
-      const path = `m/44'/60'/0'/0/${i}`
+  const numNetworks = Object.values(Networks).length
+  for (let i = 0; i < numNetworks; i++) {
+    const network = Object.values(Networks)[i]
+    for (let j = 0; j < WALLET_DEPTH; j++) {
+      const path = `m/44'/60'/0'/0/${j}`
       const provider = providers[network]
+      await provider.ready
       const w = Wallet.fromMnemonic(process.env.sweep_mnemonic, path).connect(provider)
       if (wallets[network]) {
         wallets[network].push(w)
@@ -49,7 +61,7 @@ function getWallets(providers: Record<Networks, JsonRpcProvider>): Record<Networ
         wallets[network] = [w]
       }
     }
-  })
+  }
   return wallets as Record<Networks, Wallet[]>
 }
 
@@ -87,11 +99,11 @@ async function estimateGasPrice(provider: JsonRpcProvider): Promise<BigNumber | 
 async function main() {
   checkEnvironment()
   const providers: Record<Networks, JsonRpcProvider> = {
-    [Networks.mainnet]: new JsonRpcProvider(process.env.mainnet_rpc, 1),
-    [Networks.rinkeby]: new JsonRpcProvider(process.env.rinkeby_rpc, 4),
-    [Networks.kovan]: new JsonRpcProvider(process.env.kovan_rpc, 42),
-    [Networks.ropsten]: new JsonRpcProvider(process.env.ropsten_rpc, 3),
-    [Networks.goerli]: new JsonRpcProvider(process.env.goerli_rpc, 5),
+    [Networks.mainnet]: new JsonRpcProvider(process.env.mainnet_rpc, ChainIds[Networks.mainnet]),
+    [Networks.rinkeby]: new JsonRpcProvider(process.env.rinkeby_rpc, ChainIds[Networks.rinkeby]),
+    [Networks.kovan]: new JsonRpcProvider(process.env.kovan_rpc, ChainIds[Networks.kovan]),
+    [Networks.ropsten]: new JsonRpcProvider(process.env.ropsten_rpc, ChainIds[Networks.ropsten]),
+    [Networks.goerli]: new JsonRpcProvider(process.env.goerli_rpc, ChainIds[Networks.goerli]),
   }
 
   const networkValues = Object.values(Networks)
@@ -101,29 +113,31 @@ async function main() {
     gasPriceEstimates[network] = await estimateGasPrice(providers[network])
   })
 
-  let wallets = getWallets(providers)
+  let wallets = await getWallets(providers)
   const transferGasCost = BigNumber.from('21000')
   const destination = new Wallet(process.env.destination_pk).connect(providers.mainnet)
-  async function sweep(network: Networks): Promise<any> {
+  async function sweep(network: Networks): Promise<void> {
     try {
       for (let i = 0; i < WALLET_DEPTH; i++) {
-        const address = await wallets[network][i].getAddress()
+        const wallet = wallets[network][i]
+        const address = await wallet.getAddress()
         console.log(`scanning ${network}-${i}: ${address}`)
-        const balance = await wallets[network][i].getBalance()
+        const balance = await wallet.getBalance()
         const transferCost = transferGasCost.mul(gasPriceEstimates[network])
         if (balance.gt(transferCost)) {
           console.log(`worth transacting on ${network}${i} as ${address}`)
           console.log(`balance: ${balance.toString()}`)
           console.log(`transferCost: ${transferCost.toString()}`)
-          const transaction = {
+          const transaction: Deferrable<TransactionRequest> = {
             to: destination.address,
-            from: wallets[network][i].address,
+            from: wallet.address,
+            gasLimit: transferGasCost,
             gasPrice: gasPriceEstimates[network],
             value: balance.sub(transferCost),
-            gasLimit: transferGasCost,
+            chainId: ChainIds[network],
           }
           console.log(`transaction prepared for ${network}`, transaction)
-          await wallets[network][i].sendTransaction(transaction)
+          await wallet.sendTransaction(transaction)
         }
       }
     } catch (error) {
