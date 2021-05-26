@@ -84,15 +84,16 @@ async function estimateGasPrice(provider: JsonRpcProvider): Promise<BigNumber | 
     const block1 = await provider.getBlockWithTransactions(-1)
     const block2 = await provider.getBlockWithTransactions(-2)
     const transactions = [...block.transactions, ...block1.transactions, ...block2.transactions]
-    const filteredTxList = transactions.filter((tx) => tx.gasPrice.gt(0))
+    const filteredTxList = transactions.filter((tx) => tx.gasPrice.gt(0)) // filter out miner stuff
     const gasPrices = filteredTxList.map((tx) => tx.gasPrice)
     const gasSum = gasPrices.reduce((acc, cur) => acc.add(cur), BigNumber.from(0))
     const divisor = gasPrices.length || 1
     const average = gasSum.div(divisor).mul(102).div(100) // 2% gas price buffer over average rate
     console.log(`gas price estimate for ${network.name}: ${utils.formatUnits(average, 'gwei')}`)
-    return average
+    return average || BigNumber.from(1)
   } catch (error) {
     console.error(`failed gas estimation: ${error}`)
+    return BigNumber.from(1)
   }
 }
 
@@ -109,8 +110,8 @@ async function main() {
   const networkValues = Object.values(Networks)
   const gasPriceEstimates = {}
 
-  networkValues.forEach(async (network) => {
-    gasPriceEstimates[network] = await estimateGasPrice(providers[network])
+  networkValues.forEach((network) => {
+    estimateGasPrice(providers[network]).then((gasEstimate) => (gasPriceEstimates[network] = gasEstimate))
   })
 
   let wallets = await getWallets(providers)
