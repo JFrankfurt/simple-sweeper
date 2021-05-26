@@ -28,7 +28,7 @@ const WALLET_DEPTH = parseInt(process.env.sweep_depth) || 3
 
 function checkEnvironment(): void {
   const requiredVars = [
-    'destination_pk',
+    'destination',
     'sweep_mnemonic',
     'sweep_depth',
     'sweep_frequency',
@@ -115,7 +115,6 @@ async function main() {
 
   let wallets = await getWallets(providers)
   const transferGasCost = BigNumber.from('21000')
-  const destination = new Wallet(process.env.destination_pk).connect(providers.mainnet)
   async function sweep(network: Networks): Promise<void> {
     try {
       for (let i = 0; i < WALLET_DEPTH; i++) {
@@ -129,7 +128,7 @@ async function main() {
           console.log(`balance: ${balance.toString()}`)
           console.log(`transferCost: ${transferCost.toString()}`)
           const transaction: Deferrable<TransactionRequest> = {
-            to: destination.address,
+            to: process.env.destination,
             from: wallet.address,
             gasLimit: transferGasCost,
             gasPrice: gasPriceEstimates[network],
