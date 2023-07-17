@@ -54,11 +54,7 @@ async function getWallets(
 
 async function estimateGasPrice(
   provider: JsonRpcProvider
-): Promise<{
-  maxFeePerGas: BigNumber | undefined
-  maxPriorityFeePerGas: BigNumber | undefined
-}> {
-  let maxPriorityFeePerGas, maxFeePerGas
+): Promise<BigNumber> {
   try {
     const network = await provider.getNetwork()
     // todo: cache prior blocks
@@ -71,10 +67,10 @@ async function estimateGasPrice(
     const divisor = gasPrices.length || 1
     const average = gasSum.div(divisor).mul(105).div(100) // 5% gas price buffer over average rate
     console.log(`gas price estimate for ${network.name}: ${formatUnits(average, 'gwei')}`)
+    return average
   } catch (error) {
     console.error(`failed gas estimation: ${error}`)
   }
-  return { maxPriorityFeePerGas, maxFeePerGas }
 }
 
 async function main() {
@@ -86,14 +82,14 @@ async function main() {
   }
 
   const networkValues = Object.values(Networks)
-  const gasPriceEstimates = {}
+  const gasPriceEstimates = {} as Record<Networks, BigNumber>
 
   networkValues.forEach((network) => {
     if (!providers[network]) {
       return
     }
     estimateGasPrice(providers[network]).then(
-      ({ maxFeePerGas, maxPriorityFeePerGas }) => (gasPriceEstimates[network] = { maxFeePerGas, maxPriorityFeePerGas })
+      (gas) => (gasPriceEstimates[network] = gas)
     )
   })
 
@@ -108,7 +104,7 @@ async function main() {
         const balance = await wallet.getBalance()
         const transferCost = transferGasCost.mul(gasPriceEstimates[network])
         if (balance.gt(transferCost)) {
-          const { maxFeePerGas, maxPriorityFeePerGas } = gasPriceEstimates[network]
+          const gasEstimate = gasPriceEstimates[network]
           console.log(`worth transacting on ${network}${i} as ${address}`)
           console.log(`balance: ${balance.toString()}`)
           console.log(`transferCost: ${transferCost.toString()}`)
@@ -116,8 +112,8 @@ async function main() {
             to: process.env.destination,
             from: wallet.address,
             gasLimit: transferGasCost,
-            maxFeePerGas,
-            maxPriorityFeePerGas,
+            maxFeePerGas: gasEstimate,
+            maxPriorityFeePerGas: 1,
             value: balance.sub(transferCost),
             chainId: ChainIds[network],
           }
