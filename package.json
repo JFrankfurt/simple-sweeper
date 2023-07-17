@@ -1,16 +1,16 @@
 {
   "dependencies": {
-    "@nomiclabs/hardhat-ethers": "^2.0.2",
-    "@types/node": "^14.14.41",
-    "@types/node-fetch": "^2.5.10",
+    "@ethersproject/bignumber": "^5.5.0",
+    "@ethersproject/properties": "^5.5.0",
+    "@ethersproject/providers": "^5.5.0",
+    "@ethersproject/units": "^5.5.0",
+    "@ethersproject/wallet": "^5.5.0",
+    "@types/node": "^20.4.2",
     "dotenv": "^8.2.0",
-    "ethers": "^5.1.3",
-    "hardhat": "^2.2.0",
-    "node-fetch": "^2.6.1",
     "nodemon": "^2.0.7",
     "prettier": "^2.2.1",
     "ts-node": "^9.1.1",
-    "typescript": "^4.2.4"
+    "typescript": "^5.1.6"
   },
   "scripts": {
     "dev": "nodemon src/index.ts",

@@ -2,7 +2,7 @@
   "compilerOptions": {
     "allowSyntheticDefaultImports": true,
     "target": "es6",
-    "lib": ["esnext"],
+    "lib": ["esnext", "DOM"],
     "resolveJsonModule": true,
     "moduleResolution": "node",
     "outDir": "dist"
