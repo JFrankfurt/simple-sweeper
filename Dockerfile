@@ -1,11 +1,11 @@
-FROM bitnami/node:16 as builder
+FROM bitnami/node:18 as builder
 ENV NODE_ENV="production"
 COPY . /app
 WORKDIR /app
-RUN npm ci --only=production
+RUN yarn
 
-FROM bitnami/node:16-prod
+FROM bitnami/node:18-prod
 ENV NODE_ENV="production"
 COPY --from=builder /app /app
 WORKDIR /app
-CMD ["npm", "start"]
+CMD ["yarn", "start"]
