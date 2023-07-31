@@ -1,6 +1,6 @@
 import { BigNumber } from '@ethersproject/bignumber'
 import { Deferrable } from '@ethersproject/properties'
-import { JsonRpcProvider, TransactionRequest } from '@ethersproject/providers'
+import { FeeData, JsonRpcProvider, TransactionRequest } from '@ethersproject/providers'
 import { formatUnits } from '@ethersproject/units'
 import { Wallet } from '@ethersproject/wallet'
 import { config } from 'dotenv'
@@ -52,27 +52,6 @@ async function getWallets(
   return wallets as Record<Networks, Wallet[]>
 }
 
-async function estimateGasPrice(
-  provider: JsonRpcProvider
-): Promise<BigNumber> {
-  try {
-    const network = await provider.getNetwork()
-    // todo: cache prior blocks
-    const block = await provider.getBlockWithTransactions('latest')
-    const block1 = await provider.getBlockWithTransactions(-1)
-    const transactions = [...block.transactions, ...block1.transactions]
-    const filteredTxList = transactions.filter((tx) => tx.gasPrice.gt(0)) // filter out miner stuff
-    const gasPrices = filteredTxList.map((tx) => tx.gasPrice)
-    const gasSum = gasPrices.reduce((acc, cur) => acc.add(cur), BigNumber.from(0))
-    const divisor = gasPrices.length || 1
-    const average = gasSum.div(divisor).mul(105).div(100) // 5% gas price buffer over average rate
-    console.log(`gas price estimate for ${network.name}: ${formatUnits(average, 'gwei')}`)
-    return average
-  } catch (error) {
-    console.error(`failed gas estimation: ${error}`)
-  }
-}
-
 async function main() {
   checkEnvironment()
   const providers: { [key in keyof typeof Networks]?: JsonRpcProvider } = {
@@ -82,15 +61,15 @@ async function main() {
   }
 
   const networkValues = Object.values(Networks)
-  const gasPriceEstimates = {} as Record<Networks, BigNumber>
+  const gasPriceEstimates = {} as Record<Networks, FeeData>
 
   networkValues.forEach((network) => {
     if (!providers[network]) {
       return
     }
-    estimateGasPrice(providers[network]).then(
-      (gas) => (gasPriceEstimates[network] = gas)
-    )
+    providers[network].getFeeData().then((feeData) => {
+      gasPriceEstimates[network] = feeData
+    })
   })
 
   let wallets = await getWallets(providers)
@@ -100,25 +79,24 @@ async function main() {
       for (let i = 0; i < WALLET_DEPTH; i++) {
         const wallet = wallets[network][i]
         const address = await wallet.getAddress()
-        console.log(`scanning ${network}-${i}: ${address}`)
+        // console.log(`scanning ${network}-${i}: ${address}`)
         const balance = await wallet.getBalance()
-        const transferCost = transferGasCost.mul(gasPriceEstimates[network])
+        const { maxFeePerGas, maxPriorityFeePerGas } = gasPriceEstimates[network]
+        const transferCost = transferGasCost.mul(maxFeePerGas)
         if (balance.gt(transferCost)) {
-          const gasEstimate = gasPriceEstimates[network]
-          console.log(`worth transacting on ${network}${i} as ${address}`)
-          console.log(`balance: ${balance.toString()}`)
-          console.log(`transferCost: ${transferCost.toString()}`)
           const transaction: Deferrable<TransactionRequest> = {
             to: process.env.destination,
             from: wallet.address,
             gasLimit: transferGasCost,
-            maxFeePerGas: gasEstimate,
-            maxPriorityFeePerGas: 1,
+            maxFeePerGas,
+            maxPriorityFeePerGas,
             value: balance.sub(transferCost),
             chainId: ChainIds[network],
           }
-          console.log(`transaction prepared for ${network}`, transaction)
           await wallet.sendTransaction(transaction)
+          console.log(`worth transacting on ${network}${i} as ${address}`)
+          console.log(`attempting to sweep: ${balance.sub(transferCost).toString()}`)
+          console.log((new Date()).toUTCString())
         }
       }
     } catch (error) {
@@ -134,7 +112,7 @@ async function main() {
     }, SWEEP_FREQ)
     setInterval(() => {
       networkValues.forEach((network) => {
-        estimateGasPrice(providers[network]).then((price) => (gasPriceEstimates[network] = price))
+        providers[network].getFeeData().then((feeData) => gasPriceEstimates[network] = feeData)
       })
     }, SWEEP_FREQ ^ 1.06)
   })
