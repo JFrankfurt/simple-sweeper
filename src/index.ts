@@ -19,11 +19,10 @@ const ChainIds: Record<Networks, number> = {
   base: 8453,
 }
 
-const SWEEP_FREQ = !!process.env.sweep_frequency ? parseInt(process.env.sweep_frequency) : 30 * 1000
 const WALLET_DEPTH = parseInt(process.env.sweep_depth) || 3
 
 function checkEnvironment(): void {
-  const requiredVars = ['destination', 'sweep_mnemonic', 'sweep_depth', 'sweep_frequency']
+  const requiredVars = ['destination', 'sweep_mnemonic', 'sweep_depth']
   const hasRequiredEnvVars = requiredVars.reduce((acc, cur) => (Boolean(process.env[cur]) ? acc : false), true)
 
   if (!hasRequiredEnvVars) {
@@ -105,16 +104,14 @@ async function main() {
   }
 
   return new Promise<void>(() => {
-    // providers[Networks.base].on('block', async (blockNumber) => await handleBlock(Networks.base, blockNumber))
-    setInterval(async () => {
-      const sweeps = networkValues.map(sweep)
-      await Promise.all(sweeps)
-    }, SWEEP_FREQ)
+    providers[Networks.goerli].on('block', () => sweep(Networks.goerli))
+    providers[Networks.sepolia].on('block', () => sweep(Networks.sepolia))
+    providers[Networks.base].on('block', () => sweep(Networks.base))
     setInterval(() => {
       networkValues.forEach((network) => {
         providers[network].getFeeData().then((feeData) => gasPriceEstimates[network] = feeData)
       })
-    }, SWEEP_FREQ ^ 1.06)
+    }, 30*1000)
   })
 }
 
