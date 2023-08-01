@@ -1,9 +1,5 @@
-import { BigNumber } from '@ethersproject/bignumber'
-import { Deferrable } from '@ethersproject/properties'
-import { FeeData, JsonRpcProvider, TransactionRequest } from '@ethersproject/providers'
-import { formatUnits } from '@ethersproject/units'
-import { Wallet } from '@ethersproject/wallet'
 import { config } from 'dotenv'
+import { FeeData, HDNodeWallet, JsonRpcProvider, TransactionRequest, Wallet } from 'ethers'
 
 config({})
 
@@ -39,12 +35,12 @@ async function getWallets(
     for (let j = 0; j < WALLET_DEPTH; j++) {
       const path = `m/44'/60'/0'/0/${j}`
       const provider = providers[network]
-      await provider.ready
-      const w = Wallet.fromMnemonic(process.env.sweep_mnemonic, path).connect(provider)
+      const hdWallet = HDNodeWallet.fromPhrase(process.env.sweep_mnemonic, path)
+      const connectedWallet = hdWallet.connect(provider)
       if (wallets[network]) {
-        wallets[network].push(w)
+        wallets[network].push(connectedWallet)
       } else {
-        wallets[network] = [w]
+        wallets[network] = [connectedWallet]
       }
     }
   }
@@ -72,29 +68,32 @@ async function main() {
   })
 
   let wallets = await getWallets(providers)
-  const transferGasCost = BigNumber.from('21000')
+  const transferGasCost = 21000n
   async function sweep(network: Networks): Promise<void> {
     try {
       for (let i = 0; i < WALLET_DEPTH; i++) {
         const wallet = wallets[network][i]
         const address = await wallet.getAddress()
-        // console.log(`scanning ${network}-${i}: ${address}`)
-        const balance = await wallet.getBalance()
+        const balance = await wallet.provider.getBalance(address)
         const { maxFeePerGas, maxPriorityFeePerGas } = gasPriceEstimates[network]
-        const transferCost = transferGasCost.mul(maxFeePerGas)
-        if (balance.gt(transferCost)) {
-          const transaction: Deferrable<TransactionRequest> = {
+        const transferCost = transferGasCost * maxFeePerGas
+        if (balance > transferCost) {
+          console.log('balance', balance)
+          console.log('maxFeePerGas', maxFeePerGas)
+          console.log('maxPriorityFeePerGas', maxPriorityFeePerGas)
+          console.log('transferCost', transferCost)
+          console.log(`worth transacting on ${network}${i} as ${address} to ${process.env.destination}`)
+          console.log(`attempting to sweep: ${(balance - transferCost).toString()}`)
+          const transaction: TransactionRequest = {
             to: process.env.destination,
             from: wallet.address,
             gasLimit: transferGasCost,
             maxFeePerGas,
             maxPriorityFeePerGas,
-            value: balance.sub(transferCost),
+            value: balance - transferCost,
             chainId: ChainIds[network],
           }
           await wallet.sendTransaction(transaction)
-          console.log(`worth transacting on ${network}${i} as ${address}`)
-          console.log(`attempting to sweep: ${balance.sub(transferCost).toString()}`)
           console.log((new Date()).toUTCString())
         }
       }
